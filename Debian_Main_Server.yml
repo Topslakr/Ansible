@@ -1,0 +1,75 @@
+---
+- name: Debian Main Server
+  hosts: WDR-Storage
+  tasks:
+    - name: Run Debian Prep Tasks
+      include_tasks: Debian-Prep-Minimal.yml
+
+    - name: Run Debian Firewall Tasks
+      include_tasks: Debian_Firewalld.yml
+
+    - name: Run ZFS Install
+      include_tasks: ZFS_Install.yml
+
+    - name: Install Required Apps
+      apt:
+        name: 
+          - 'cockpit'
+          - 'cockpit-ws'
+          - 'cockpit-bridge'
+          - 'cockpit-machines'
+          - 'cockpit-networkmanager'
+          - 'cockpit-podman'
+          - 'cockpit-storaged'
+          - 'cockpit-system'
+          - 'samba'
+          - 'samba-client'
+          - 'samba-common'
+          - 'network-manager'
+          - 'anacron'
+          - 'nagios-nrpe-server'
+          - 'rsnapshot'
+          - 'apt-file'
+          - 'mariadb-client-core'
+          - 'mariadb-client'
+          - 'mutt'
+          - 'influxdb-client'
+          - 'offlineimap3'
+          - 'smartmontools'
+        state: present
+        update_cache: yes
+
+    - name: Perform systemctl daemon-reload
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable service samba and ensure it is not masked
+      ansible.builtin.systemd:
+         name: samba.service
+         enabled: true
+         masked: no
+
+    - name: Enable service Network Manager and ensure it is not masked
+      ansible.builtin.systemd:
+         name: NetworkManager.service
+         enabled: true
+         masked: no
+
+    - name: Allow Samba through Firewall
+      ansible.builtin.firewalld:
+        service: samba
+        permanent: yes
+        state: enabled
+
+    - name: Allow Cockpit through Firewall
+      ansible.builtin.firewalld:
+        service: cockpit
+        permanent: yes
+        state: enabled
+
+    - name: Run Debian Rsyslog Receiver Tasks
+      include_tasks: Syslog_Reciever.yml
+
+    - name: Reboot Machine
+      reboot:
+...

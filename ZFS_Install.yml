@@ -1,0 +1,26 @@
+---
+- name: Setup ZFS Repo
+  apt_repository:
+    repo: deb http://deb.debian.org/debian/ stable main contrib
+    state: present
+    update_cache: yes
+
+- name: Install Kernel Sources
+  apt:
+    name: ['dpkg-dev', 'linux-headers-generic', 'linux-image-generic', 'sanoid', 'pigz']
+    state: present
+
+- name: Install ZFS
+  apt:
+    name: ['zfs-dkms', 'zfsutils-linux']
+    state: present
+
+- name: Clone the git repository
+  git:
+    repo: 'https://github.com/45drives/cockpit-zfs-manager.git'
+    dest: '/root/cockpit-zfs-manager'
+
+- name: Copy the files to the desired directory
+  shell: cp -rf /root/cockpit-zfs-manager/zfs/ /usr/share/cockpit/
+  become: yes
+...

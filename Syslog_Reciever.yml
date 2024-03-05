@@ -1,0 +1,27 @@
+---
+- name: Install Rsyslog
+  ansible.builtin.apt:
+    name: rsyslog
+    state: present
+
+- name: Copy Config - Receive over UDP
+  ansible.builtin.copy:
+    src: files/recieve_UDP1514.conf
+    dest: /etc/rsyslog.d/
+
+- name: Copy Config - Filter to Files
+  ansible.builtin.copy:
+    src: files/FilterToFiles.conf
+    dest: /etc/rsyslog.d/
+
+- name: Start RSyslog
+  ansible.builtin.systemd:
+    name: rsyslog
+    state: started
+
+- name: Allow syslog through Firewall
+  firewalld:
+    port: 1514/udp
+    permanent: yes
+    state: enabled
+...

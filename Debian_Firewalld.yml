@@ -1,0 +1,18 @@
+---
+- name: Install Firewalld
+  ansible.builtin.apt:
+    name: 'firewalld'
+    state: present
+    update_cache: yes
+
+- name: Allow SSH through Firewall
+  ansible.builtin.firewalld:
+    service: ssh
+    permanent: yes
+    state: enabled
+
+- name: Enable service firewalld, and not touch the state
+  ansible.builtin.service:
+    name: firewalld
+    enabled: yes  
+...

@@ -1,0 +1,18 @@
+---
+- name: Update System
+  ansible.builtin.apt:
+    upgrade: yes
+    update_cache: yes
+    cache_valid_time: 43200
+
+- name: Allow Root SSH without Password
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^PermitRootLogin'
+    line: PermitRootLogin without-password
+
+- name: Install Core Apps
+  ansible.builtin.apt:
+    name: 'htop,vim,rsync,software-properties-common,mlocate,git'
+    state: present
+...
