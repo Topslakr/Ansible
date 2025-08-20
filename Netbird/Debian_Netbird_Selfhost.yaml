@@ -6,7 +6,7 @@
 
   vars:
     netbird_domain: "vpn.example.com"
-    cockpit_allow_host: "admin.example.com"
+    cockpit_allow_host: "admin.example.com" # I use reverse DNS to have Ansible find the IP of where I manage this from, and allow it through the firewall.
     new_user: "CHANGEME_USER"
     new_user_password: "CHANGEME_PASSWORD"
 
