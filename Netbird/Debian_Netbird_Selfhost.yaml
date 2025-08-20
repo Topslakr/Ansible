@@ -1,0 +1,202 @@
+---
+- name: Self-hosted Netbird server on Debian 12
+  hosts: localhost
+  connection: local
+  become: true
+
+  vars:
+    netbird_domain: "vpn.example.com"
+    cockpit_allow_host: "admin.example.com"
+    new_user: "CHANGEME_USER"
+    new_user_password: "CHANGEME_PASSWORD"
+
+    static_ip: "1.2.3.4"
+    static_cidr: "24"
+    static_gateway: "1.2.3.1"
+    static_dns: "1.1.1.1 9.9.9.9"
+
+  pre_tasks:
+    - name: Patch system packages
+      apt:
+        update_cache: yes
+        upgrade: dist
+        autoremove: yes
+
+  tasks:
+    # --- User + SSH lockdown ---
+    - name: Create new user
+      user:
+        name: "{{ new_user }}"
+        password: "{{ new_user_password | password_hash('sha512') }}"
+        groups: sudo
+        shell: /bin/bash
+        state: present
+
+    - name: Disable root SSH login
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^PermitRootLogin'
+        line: 'PermitRootLogin no'
+        create: yes
+      notify: Restart sshd
+
+    # --- Static IP config ---
+    - name: Configure eth0 with static IP
+      command: >
+        nmcli con add type ethernet ifname eth0 con-name eth0-static
+        ip4 {{ static_ip }}/{{ static_cidr }} gw4 {{ static_gateway }}
+        ipv4.dns "{{ static_dns }}"
+        ipv4.method manual
+      args:
+        creates: /etc/NetworkManager/system-connections/eth0-static.nmconnection
+
+    # --- Required packages ---
+    - name: Install base packages
+      apt:
+        name:
+          - htop
+          - btop
+          - vim
+          - sshguard
+          - rsyslog
+          - cockpit
+          - cockpit-ws
+          - cockpit-bridge
+          - cockpit-networkmanager
+          - cockpit-pcp
+          - cockpit-storaged
+          - cockpit-system
+          - tmux
+          - curl
+          - jq
+          - plocate
+          - nmap
+          - net-tools
+          - firewalld
+          - network-manager
+        state: present
+
+    # --- Docker installation ---
+    - name: Install Docker prereqs
+      apt:
+        name: [ "ca-certificates", "curl", "gnupg" ]
+        state: present
+
+    - name: Add Docker GPG key
+      get_url:
+        url: https://download.docker.com/linux/debian/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: '0644'
+
+    - name: Add Docker apt repository
+      copy:
+        dest: /etc/apt/sources.list.d/docker.list
+        content: |
+          deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian bookworm stable
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install Docker engine and compose
+      apt:
+        name: [ "docker-ce", "docker-ce-cli", "containerd.io", "docker-buildx-plugin", "docker-compose-plugin" ]
+        state: present
+
+    # --- Netbird self-hosted install ---
+    - name: Run Netbird quickstart
+      shell: |
+        curl -fsSL https://raw.githubusercontent.com/netbirdio/netbird/main/selfhosted/quickstart/docker-compose.yml -o /opt/netbird/docker-compose.yml
+        docker compose -f /opt/netbird/docker-compose.yml up -d
+      args:
+        creates: /opt/netbird/docker-compose.yml
+      register: netbird_install
+
+    - name: Save Netbird install log
+      copy:
+        dest: /root/netbird-install.log
+        content: "{{ netbird_install.stdout }}\n{{ netbird_install.stderr }}"
+
+    # --- Firewall setup (after Netbird is running) ---
+    - name: Resolve Cockpit allow host to IP
+      command: getent ahosts "{{ cockpit_allow_host }}"
+      register: cockpit_host_lookup
+
+    - name: Extract first IPv4 from lookup
+      set_fact:
+        cockpit_host_ip: "{{ cockpit_host_lookup.stdout_lines[0].split()[0] }}"
+
+    - name: Allow Cockpit only from resolved IP
+      firewalld:
+        rich_rule: 'rule family="ipv4" source address="{{ cockpit_host_ip }}" port port="9090" protocol="tcp" accept'
+        permanent: true
+        state: enabled
+        immediate: true
+
+    - name: Allow Netbird HTTPS dashboard
+      firewalld:
+        port: 443/tcp
+        permanent: true
+        state: enabled
+        immediate: true
+
+    - name: Allow Netbird STUN/TURN
+      firewalld:
+        port: 3478/udp
+        permanent: true
+        state: enabled
+        immediate: true
+
+    - name: Allow Netbird WireGuard
+      firewalld:
+        port: 51820/udp
+        permanent: true
+        state: enabled
+        immediate: true
+
+    - name: Reload firewalld
+      command: firewall-cmd --reload
+
+    # --- sshguard config ---
+    - name: Check possible sshguard firewalld backend paths
+      stat:
+        path: "{{ item }}"
+      register: sshg_backend_stats
+      loop:
+        - /usr/libexec/sshguard/sshg-fw-firewalld
+        - /usr/lib/sshguard/sshg-fw-firewalld
+        - /usr/lib/x86_64-linux-gnu/sshguard/sshg-fw-firewalld
+
+    - name: Select sshguard backend
+      set_fact:
+        sshguard_backend_path: >-
+          {{ (sshg_backend_stats.results
+              | selectattr('stat.exists')
+              | map(attribute='item')
+              | list
+              | first) | default('/usr/libexec/sshguard/sshg-fw-firewalld', true) }}
+
+    - name: Configure sshguard backend
+      lineinfile:
+        path: /etc/default/sshguard
+        regexp: '^BACKEND='
+        line: 'BACKEND="{{ sshguard_backend_path }}"'
+        create: yes
+      notify: Restart sshguard
+
+    - name: Ensure sshguard is running
+      service:
+        name: sshguard
+        state: started
+        enabled: true
+
+  handlers:
+    - name: Restart sshd
+      service:
+        name: sshd
+        state: restarted
+
+    - name: Restart sshguard
+      service:
+        name: sshguard
+        state: restarted
