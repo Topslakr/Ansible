@@ -40,16 +40,6 @@
         create: yes
       notify: Restart sshd
 
-    # --- Static IP config ---
-    - name: Configure eth0 with static IP
-      command: >
-        nmcli con add type ethernet ifname eth0 con-name eth0-static
-        ip4 {{ static_ip }}/{{ static_cidr }} gw4 {{ static_gateway }}
-        ipv4.dns "{{ static_dns }}"
-        ipv4.method manual
-      args:
-        creates: /etc/NetworkManager/system-connections/eth0-static.nmconnection
-
     # --- Required packages ---
     - name: Install base packages
       apt:
@@ -75,6 +65,17 @@
           - firewalld
           - network-manager
         state: present
+
+    # --- Static IP config ---
+    - name: Configure eth0 with static IP
+      command: >
+        nmcli con add type ethernet ifname eth0 con-name eth0-static
+        ip4 {{ static_ip }}/{{ static_cidr }} gw4 {{ static_gateway }}
+        ipv4.dns "{{ static_dns }}"
+        ipv4.method manual
+      args:
+        creates: /etc/NetworkManager/system-connections/eth0-static.nmconnection
+
 
     # --- Docker installation ---
     - name: Install Docker prereqs
